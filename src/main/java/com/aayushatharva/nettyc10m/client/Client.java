@@ -10,10 +10,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class Client {
 
     public static void main(String[] args) {
-        String ip = args[0];
-        int port = Integer.parseInt(args[1]);
-        int payloadSize = Integer.parseInt(args[2]);
-        int connections = Integer.parseInt(args[3]);
+        String localIP = args[0];
+        String ip = args[1];
+        int port = Integer.parseInt(args[2]);
+        int payloadSize = Integer.parseInt(args[3]);
+        int connections = Integer.parseInt(args[4]);
 
         byte[] payload = new byte[payloadSize];
         new Random().nextBytes(payload);
@@ -39,6 +40,7 @@ public final class Client {
             new Thread(() -> {
                 try {
                     SocketChannel socketChannel = SocketChannel.open();
+                    socketChannel.bind(new InetSocketAddress(localIP, 0));
                     socketChannel.connect(new InetSocketAddress(ip, port));
 
                     while (!socketChannel.finishConnect()) {
