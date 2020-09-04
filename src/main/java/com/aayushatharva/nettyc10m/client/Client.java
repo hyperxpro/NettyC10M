@@ -19,7 +19,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class Client {
+public final class Client {
 
     private static final AtomicInteger activeConnections = new AtomicInteger(0);
 
@@ -45,14 +45,12 @@ public class Client {
             }
         }).start();
 
-
         EventLoopGroup workers;
         if (Epoll.isAvailable()) {
             workers = new EpollEventLoopGroup(Runtime.getRuntime().availableProcessors() * 2);
         } else {
             workers = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors() * 2);
         }
-
 
         for (int i = 0; i < connections; i++) {
             new Thread(() -> {

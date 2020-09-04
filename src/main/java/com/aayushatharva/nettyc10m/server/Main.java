@@ -1,6 +1,6 @@
 package com.aayushatharva.nettyc10m.server;
 
-public class Main {
+public final class Main {
 
     public static void main(String[] args) throws InterruptedException {
         Server server = new Server();
