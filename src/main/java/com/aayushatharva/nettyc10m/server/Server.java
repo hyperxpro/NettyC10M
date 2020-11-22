@@ -2,61 +2,74 @@ package com.aayushatharva.nettyc10m.server;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.epoll.Epoll;
+import io.netty.channel.ServerChannel;
 import io.netty.channel.epoll.EpollEventLoopGroup;
-import io.netty.channel.epoll.EpollMode;
 import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.unix.UnixChannelOption;
+import io.netty.incubator.channel.uring.IOUringEventLoopGroup;
+import io.netty.incubator.channel.uring.IOUringServerSocketChannel;
 
 final class Server {
 
-    public void run() throws InterruptedException {
+    private final String transport;
+
+    public Server(String transport) {
+        this.transport = transport;
+    }
+
+    public void run() {
 
         EventLoopGroup bossWorkers;
         EventLoopGroup childWorkers;
+        ServerChannel serverChannel;
 
-        if (Epoll.isAvailable()) {
-            bossWorkers = new EpollEventLoopGroup(Runtime.getRuntime().availableProcessors() * 10);
-            childWorkers = new EpollEventLoopGroup(Runtime.getRuntime().availableProcessors() * 10);
+        int threads = Runtime.getRuntime().availableProcessors();
+        if (transport.equalsIgnoreCase("iouring")) {
+            bossWorkers = new IOUringEventLoopGroup(threads);
+            childWorkers = new IOUringEventLoopGroup(threads * 2);
+
+            serverChannel = new IOUringServerSocketChannel();
+        } else if (transport.equalsIgnoreCase("epoll")) {
+            bossWorkers = new EpollEventLoopGroup(threads);
+            childWorkers = new EpollEventLoopGroup(threads * 2);
+
+            serverChannel = new EpollServerSocketChannel();
+        } else if (transport.equalsIgnoreCase("nio")) {
+            bossWorkers = new NioEventLoopGroup(threads);
+            childWorkers = new NioEventLoopGroup(threads * 2);
+
+            serverChannel = new NioServerSocketChannel();
         } else {
-            bossWorkers = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors() * 10);
-            childWorkers = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors() * 10);
+            throw new IllegalArgumentException("Unknown Transport: " + transport);
         }
 
         ServerBootstrap serverBootstrap = new ServerBootstrap()
                 .group(bossWorkers, childWorkers)
-                .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .option(ChannelOption.AUTO_CLOSE, false)
+                .option(ChannelOption.AUTO_CLOSE, true)
                 .option(ChannelOption.AUTO_READ, true)
-                .option(ChannelOption.SO_BACKLOG, 2147483647)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 1000 * 10)
-                .channelFactory(() -> {
-                    if (Epoll.isAvailable()) {
-                        EpollServerSocketChannel epollServerSocketChannel = new EpollServerSocketChannel();
-
-                        epollServerSocketChannel.config()
-                                .setEpollMode(EpollMode.EDGE_TRIGGERED)
-                                .setTcpFastopen(2147483647);
-                        return epollServerSocketChannel;
-                    } else {
-                        return new NioServerSocketChannel();
-                    }
-                })
+                .option(ChannelOption.SO_BACKLOG, Integer.MAX_VALUE)
+                .option(ChannelOption.SO_RCVBUF, Integer.MAX_VALUE)
+                .option(UnixChannelOption.SO_REUSEPORT, true)
+                .childOption(ChannelOption.SO_SNDBUF, Integer.MAX_VALUE)
+                .channelFactory(() -> serverChannel)
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel channel) {
-                        channel.pipeline().addFirst(new ConnectionTracker()).addLast(new EchoHandler());
+                        channel.pipeline().addLast(new EchoHandler());
                     }
                 });
 
-        serverBootstrap.bind(9110).sync();
+        for (int i = 0; i < threads; i++) {
+            serverBootstrap.bind(9110);
+        }
+
         System.out.println("Server Started...");
     }
 }
